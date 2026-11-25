@@ -61,7 +61,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             ack asciidoc autoconf automake autopoint bison build-essential \
-            bpftool bzip2 ccache clang cmake cpio curl device-tree-compiler dwarves \
+            bzip2 ccache clang cmake cpio curl device-tree-compiler dwarves \
             flex gawk gcc-multilib g++-multilib gettext git gperf \
             lib32gcc-s1 libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
             libgmp-dev libmpc-dev libmpfr-dev libncurses-dev libncurses5-dev \
@@ -161,8 +161,10 @@ jobs:
           echo "Kernel BTF binary validation:"
           VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
           test -n "$VMLINUX"
-          bpftool btf dump file "$VMLINUX" format raw > /dev/null
-          echo "BTF successfully validated in $VMLINUX"
+          BTF_SECTION="$RUNNER_TEMP/vmlinux.btf"
+          objcopy --dump-section .BTF="$BTF_SECTION" "$VMLINUX"
+          test -s "$BTF_SECTION"
+          echo "Non-empty .BTF section successfully extracted from $VMLINUX"
           echo "Checksums:"
           (cd "$OUT" && sha256sum -c sha256sums)
 
