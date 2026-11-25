@@ -134,6 +134,51 @@ jobs:
             echo "Serial build exit code: $rc"
             tail -n 300 "$GITHUB_WORKSPACE/build-logs/serial.log"
           fi
+          echo "===== Kernel size / BTF diagnostics ====="
+          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
+          if [ -n "$KERNEL_CONFIG" ]; then
+            KERNEL_ROOT="$(dirname "$KERNEL_CONFIG")/.."
+            echo "Kernel config: $KERNEL_CONFIG"
+            grep -E '^(CONFIG_(DEBUG_INFO|DEBUG_INFO_BTF|DEBUG_INFO_DWARF5|DEBUG_INFO_REDUCED|BPF|BPF_SYSCALL|BPF_JIT|IKCONFIG|IKCONFIG_PROC|KALLSYMS|KALLSYMS_ALL|MODULES|MODULE_UNLOAD|VMLINUX_BTF))=' "$KERNEL_CONFIG" || true
+          else
+            KERNEL_ROOT=""
+            echo "Kernel .config not found"
+          fi
+
+          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
+          IMAGE="$(find build_dir/target-* -maxdepth 3 -type f -name Image -print -quit)"
+          FIT="$(find build_dir/target-* -maxdepth 3 -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
+          for f in "$VMLINUX" "$IMAGE" "$FIT"; do
+            [ -n "$f" ] && [ -s "$f" ] && stat -c '%n: %s bytes' "$f"
+          done
+
+          if [ -n "$VMLINUX" ] && [ -s "$VMLINUX" ]; then
+            echo "--- ELF section sizes (vmlinux) ---"
+            readelf -SW "$VMLINUX" | grep -E ' \.?(BTF|text|rodata|data|init|symtab|strtab|debug_)' || true
+            echo "--- objdump section headers ---"
+            objdump -h "$VMLINUX" | grep -E '(^Idx|\.BTF|\.text|\.rodata|\.data|\.init|\.debug_)' || true
+            BTF_DIAG="$RUNNER_TEMP/re-ss-01-vmlinux.BTF"
+            if objcopy --dump-section ".BTF=$BTF_DIAG" "$VMLINUX" 2>/dev/null; then
+              stat -c 'Extracted .BTF: %s bytes' "$BTF_DIAG"
+            else
+              echo "Could not extract .BTF from vmlinux"
+            fi
+          fi
+
+          if [ -n "$IMAGE" ] && [ -s "$IMAGE" ]; then
+            echo "--- Image compression estimates ---"
+            gzip -n -9 -c "$IMAGE" | wc -c
+            if [ -x staging_dir/host/bin/libdeflate-gzip ]; then
+              staging_dir/host/bin/libdeflate-gzip -f -12 -c "$IMAGE" | wc -c
+            fi
+          fi
+
+          if [ -n "$FIT" ] && [ -s "$FIT" ]; then
+            echo "--- FIT metadata ---"
+            stat -c '%n: %s bytes' "$FIT"
+            mkimage -l "$FIT" || true
+          fi
+          echo "===== End kernel diagnostics ====="
           exit "$rc"
 
       - name: Upload build diagnostics
