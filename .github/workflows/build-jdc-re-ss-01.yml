@@ -73,7 +73,7 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup toolchain install stable
-          rustup toolchain install nightly-2026-10-20 --component rust-src llvm-tools
+          rustup toolchain install nightly-2026-10-20 --component rust-src --component llvm-tools
           cargo +stable install bpf-linker --version 0.11.0 --locked
           rustc +stable --version
           rustc +nightly-2026-10-20 --version
