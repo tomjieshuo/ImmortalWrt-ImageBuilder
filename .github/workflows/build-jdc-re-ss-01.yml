@@ -74,7 +74,13 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup toolchain install stable
           rustup toolchain install nightly-2026-10-20 --component rust-src --component llvm-tools
-          cargo +stable install bpf-linker --version 0.11.0 --locked
+          # Use the upstream prebuilt musl release: it bundles LLVM and avoids
+          # compiling bpf-linker against a mismatched/missing system libLLVM.
+          BPF_LINKER_URL="https://github.com/aya-rs/bpf-linker/releases/download/v0.11.0/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
+          curl -fL "$BPF_LINKER_URL" -o /tmp/bpf-linker.tar.zst
+          mkdir -p "$HOME/.cargo/bin"
+          tar --zstd -xpf /tmp/bpf-linker.tar.zst -C "$HOME/.cargo/bin"
+          chmod +x "$HOME/.cargo/bin/bpf-linker"
           rustc +stable --version
           rustc +nightly-2026-10-20 --version
           bpf-linker --version
