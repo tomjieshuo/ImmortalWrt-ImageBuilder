@@ -152,9 +152,30 @@ jobs:
 
       - name: Compile firmware
         run: |
+          set +e
           cd "$OPENWRT_PATH"
-          echo "Starting full source build with $(nproc) jobs"
-          make -j"$(nproc)" || make -j1 V=s
+          mkdir -p "$GITHUB_WORKSPACE/build-logs"
+          echo "Starting parallel source build with $(nproc) jobs"
+          make -j"$(nproc)" > "$GITHUB_WORKSPACE/build-logs/parallel.log" 2>&1
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "Parallel build failed with exit code $rc; retrying serial verbose build"
+            tail -n 120 "$GITHUB_WORKSPACE/build-logs/parallel.log"
+            make -j1 V=s > "$GITHUB_WORKSPACE/build-logs/serial.log" 2>&1
+            rc=$?
+            echo "Serial build exit code: $rc"
+            tail -n 300 "$GITHUB_WORKSPACE/build-logs/serial.log"
+          fi
+          exit "$rc"
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JDCloud-RE-SS-01-build-logs-${{ github.run_number }}
+          if-no-files-found: warn
+          compression-level: 6
+          path: build-logs/
 
       - name: Verify target images and BTF configuration
         run: |
