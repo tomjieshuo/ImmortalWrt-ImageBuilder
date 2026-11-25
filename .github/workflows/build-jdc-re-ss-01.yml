@@ -73,10 +73,10 @@ jobs:
           echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup toolchain install stable
-          rustup toolchain install nightly --component rust-src --target bpfel-unknown-none
+          rustup toolchain install nightly-2026-10-20 --component rust-src llvm-tools
           cargo +stable install bpf-linker --version 0.11.0 --locked
           rustc +stable --version
-          rustc +nightly --version
+          rustc +nightly-2026-10-20 --version
           bpf-linker --version
 
       - name: Clone LiBwrt NSS source
