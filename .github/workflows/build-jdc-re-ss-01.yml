@@ -27,6 +27,13 @@ jobs:
           ref: feat/jdc-re-ss-01-source-build
           persist-credentials: false
 
+      - name: Preserve device configuration
+        run: |
+          test -s "$GITHUB_WORKSPACE/configs/jdc-re-ss-01-nss-ebpf.config"
+          mkdir -p "$RUNNER_TEMP/jdc-re-ss-01"
+          cp "$GITHUB_WORKSPACE/configs/jdc-re-ss-01-nss-ebpf.config" "$RUNNER_TEMP/jdc-re-ss-01/device.config"
+          sha256sum "$RUNNER_TEMP/jdc-re-ss-01/device.config"
+
       - name: Show runner resources
         run: |
           echo "CPU:"
@@ -74,8 +81,6 @@ jobs:
           export PATH="$HOME/.cargo/bin:$PATH"
           rustup toolchain install stable
           rustup toolchain install nightly-2026-10-20 --component rust-src --component llvm-tools
-          # Use the upstream prebuilt musl release: it bundles LLVM and avoids
-          # compiling bpf-linker against a mismatched/missing system libLLVM.
           BPF_LINKER_URL="https://github.com/aya-rs/bpf-linker/releases/download/v0.11.0/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
           curl -fL "$BPF_LINKER_URL" -o /tmp/bpf-linker.tar.zst
           mkdir -p "$HOME/.cargo/bin"
@@ -106,7 +111,6 @@ jobs:
             https://github.com/daeuniverse/honk.git package/daeuniverse/honk/src
           git clone --depth 1 https://github.com/immortalwrt/homeproxy.git \
             package/luci-app-homeproxy
-          echo "DAE package sources:"
           ls package/daeuniverse
           test -f package/daeuniverse/dae/src/Makefile
           test -f package/daeuniverse/honk/src/Cargo.toml
@@ -117,7 +121,7 @@ jobs:
           cd "$OPENWRT_PATH"
           ./scripts/feeds update -a
           ./scripts/feeds install -a
-          cp "$GITHUB_WORKSPACE/configs/jdc-re-ss-01-nss-ebpf.config" .config
+          cp "$RUNNER_TEMP/jdc-re-ss-01/device.config" .config
           make defconfig
           echo "Resolved target:"
           grep -E '^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE|qualcommax)' .config || true
