@@ -1,4 +1,4 @@
-name: Build JDCloud RE-SS-01 NSS + eBPF Firmware
+name: Build JDCloud RE-SS-01 NSS + eBPF-capable Firmware
 
 on:
   push:
@@ -74,22 +74,6 @@ jobs:
           sudo apt-get clean
           df -hT
 
-      - name: Install Rust toolchains and BPF linker
-        run: |
-          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal --default-toolchain stable
-          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
-          export PATH="$HOME/.cargo/bin:$PATH"
-          rustup toolchain install stable
-          rustup toolchain install nightly-2026-10-20 --component rust-src --component llvm-tools
-          BPF_LINKER_URL="https://github.com/aya-rs/bpf-linker/releases/download/v0.11.0/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
-          curl -fL "$BPF_LINKER_URL" -o /tmp/bpf-linker.tar.zst
-          mkdir -p "$HOME/.cargo/bin"
-          tar --zstd -xpf /tmp/bpf-linker.tar.zst -C "$HOME/.cargo/bin"
-          chmod +x "$HOME/.cargo/bin/bpf-linker"
-          rustc +stable --version
-          rustc +nightly-2026-10-20 --version
-          bpf-linker --version
-
       - name: Clone LiBwrt NSS source
         env:
           SOURCE_BRANCH: 25.12-nss
@@ -100,20 +84,11 @@ jobs:
           cd openwrt
           git log -1 --format='LibWrt commit: %H%nCommit date: %cI%nSubject: %s'
 
-      - name: Add DAE, Honk and HomeProxy package sources
+      - name: Add HomeProxy package source
         run: |
           cd "$OPENWRT_PATH"
-          mkdir -p package/daeuniverse
-          git clone --depth 1 https://github.com/daeuniverse/openwrt-packages.git package/daeuniverse
-          git clone --depth 1 --branch v2.1.3 --recurse-submodules \
-            https://github.com/daeuniverse/dae.git package/daeuniverse/dae/src
-          git clone --depth 1 --branch v0.1.0-beta.6 --recurse-submodules \
-            https://github.com/daeuniverse/honk.git package/daeuniverse/honk/src
           git clone --depth 1 https://github.com/immortalwrt/homeproxy.git \
             package/luci-app-homeproxy
-          ls package/daeuniverse
-          test -f package/daeuniverse/dae/src/Makefile
-          test -f package/daeuniverse/honk/src/Cargo.toml
           test -f package/luci-app-homeproxy/Makefile
 
       - name: Install feeds and load device configuration
@@ -126,7 +101,75 @@ jobs:
           echo "Resolved target:"
           grep -E '^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE|qualcommax)' .config || true
           echo "Resolved required packages:"
-          grep -E '^CONFIG_PACKAGE_(mwan3|luci-app-mwan3|adguardhome|luci-app-homeproxy|dae|honk|luci-app-dae|luci-app-honk|vmlinux-btf-builtin)=y$' .config
+          grep -E '^CONFIG_PACKAGE_(mwan3|luci-app-mwan3|adguardhome|luci-app-homeproxy|vmlinux-btf-builtin)=y
+          grep -q '^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y$' .config
+          grep -q '^CONFIG_PACKAGE_mwan3=y$' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-mwan3=y$' .config
+          grep -q '^CONFIG_PACKAGE_adguardhome=y$' .config
+          grep -q '^CONFIG_PACKAGE_luci-app-homeproxy=y$' .config
+          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y$' .config
+          grep -q '^CONFIG_PACKAGE_vmlinux-btf-builtin=y$' .config
+          cp .config "$GITHUB_WORKSPACE/resolved.config"
+
+      - name: Download source packages
+        run: |
+          cd "$OPENWRT_PATH"
+          make download -j"$(nproc)"
+          find dl -size -1024c -print -delete
+
+      - name: Compile firmware
+        run: |
+          set +e
+          cd "$OPENWRT_PATH"
+          mkdir -p "$GITHUB_WORKSPACE/build-logs"
+          echo "Starting parallel source build with $(nproc) jobs"
+          make -j"$(nproc)" > "$GITHUB_WORKSPACE/build-logs/parallel.log" 2>&1
+          rc=$?
+          if [ "$rc" -ne 0 ]; then
+            echo "Parallel build failed with exit code $rc; retrying serial verbose build"
+            tail -n 120 "$GITHUB_WORKSPACE/build-logs/parallel.log"
+            make -j1 V=s > "$GITHUB_WORKSPACE/build-logs/serial.log" 2>&1
+            rc=$?
+            echo "Serial build exit code: $rc"
+            tail -n 300 "$GITHUB_WORKSPACE/build-logs/serial.log"
+          fi
+          exit "$rc"
+
+      - name: Upload build diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JDCloud-RE-SS-01-build-logs-${{ github.run_number }}
+          if-no-files-found: warn
+          compression-level: 6
+          path: build-logs/
+
+      - name: Verify target images and BTF configuration
+        run: |
+          cd "$OPENWRT_PATH"
+          OUT="$OPENWRT_PATH/bin/targets/qualcommax/ipq60xx"
+          test -d "$OUT"
+          test -s "$OUT/profiles.json"
+          grep -q 'jdcloud_re-ss-01' "$OUT/profiles.json"
+          echo "Generated image files:"
+          find "$OUT" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' | sort
+          echo "Kernel BTF setting:"
+          find build_dir/target-* -path '*/linux-*/.config' -type f -print0 \
+            | xargs -0 -r grep -H '^CONFIG_DEBUG_INFO_BTF=y$' || true
+          echo "Checksums:"
+          (cd "$OUT" && sha256sum -c sha256sums)
+
+      - name: Upload firmware and package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: JDCloud-RE-SS-01-LibWrt-NSS-eBPF-ready-${{ github.run_number }}
+          if-no-files-found: error
+          compression-level: 1
+          path: |
+            openwrt/bin/targets/qualcommax/ipq60xx/
+            openwrt/bin/packages/aarch64_cortex-a53/
+            resolved.config
+ .config
           grep -q '^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y$' .config
           grep -q '^CONFIG_PACKAGE_mwan3=y$' .config
           grep -q '^CONFIG_PACKAGE_luci-app-mwan3=y$' .config
