@@ -92,7 +92,7 @@ jobs:
 
           path = Path("target/linux/qualcommax/image/ipq60xx.mk")
           text = path.read_text()
-          marker = "define Device/jdcloud_re-ss-01\\n"
+          marker = "define Device/jdcloud_re-ss-01" + chr(10)
           start = text.index(marker)
           end = text.index("endef", start)
           block = text[start:end]
@@ -223,6 +223,12 @@ jobs:
           grep -q 'jdcloud_re-ss-01' "$OUT/profiles.json"
           echo "Generated image files:"
           find "$OUT" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' | sort
+          FACTORY="$(find "$OUT" -maxdepth 1 -type f -name '*factory.bin' -print -quit)"
+          SYSUPGRADE="$(find "$OUT" -maxdepth 1 -type f -name '*sysupgrade.bin' -print -quit)"
+          test -n "$FACTORY" && test -s "$FACTORY"
+          test -n "$SYSUPGRADE" && test -s "$SYSUPGRADE"
+          echo "Factory image: $FACTORY ($(stat -c%s "$FACTORY") bytes)"
+          echo "Sysupgrade image: $SYSUPGRADE ($(stat -c%s "$SYSUPGRADE") bytes)"
           echo "Kernel BTF configuration:"
           KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
           test -n "$KERNEL_CONFIG"
