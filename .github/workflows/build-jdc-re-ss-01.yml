@@ -84,7 +84,7 @@ jobs:
           if block.count(old) != 1:
               raise SystemExit("Expected exactly one 6 MiB RE-SS-01 kernel limit; refusing to patch")
           block = block.replace(old, "KERNEL_SIZE := 12288k", 1)
-          factory_lines = [line for line in block.splitlines() if line.startswith("IMAGE/factory.bin :=") and "append-kernel" in line and "KERNEL_SIZE" in line]
+          factory_lines = [line for line in block.splitlines() if line.strip().startswith("IMAGE/factory.bin :=") and "append-kernel" in line and "KERNEL_SIZE" in line]
           if len(factory_lines) != 1:
               raise SystemExit("Expected exactly one RE-SS-01 factory image recipe")
           text = text[:start] + block + text[end:]
