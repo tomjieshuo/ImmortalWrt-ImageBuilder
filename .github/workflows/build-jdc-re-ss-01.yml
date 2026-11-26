@@ -101,7 +101,7 @@ jobs:
           if block.count(old) != 1:
               raise SystemExit("Expected exactly one 6 MiB RE-SS-01 kernel limit; refusing to patch")
           block = block.replace(old, new, 1)
-          factory = "IMAGE/factory.bin := append-kernel | pad-to $(KERNEL_SIZE) | append-rootfs | append-metadata"
+          factory = "IMAGE/factory.bin := append-kernel | pad-to " + "$" + "(KERNEL_SIZE) | append-rootfs | append-metadata"
           if factory not in block:
               raise SystemExit("Expected RE-SS-01 factory image recipe is missing")
           text = text[:start] + block + text[end:]
