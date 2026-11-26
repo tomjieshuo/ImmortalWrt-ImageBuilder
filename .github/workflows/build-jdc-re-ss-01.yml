@@ -33,7 +33,8 @@ jobs:
           test -s "$GITHUB_WORKSPACE/configs/jdc-re-ss-01-nss-ebpf.config"
           mkdir -p "$RUNNER_TEMP/jdc-re-ss-01"
           cp "$GITHUB_WORKSPACE/configs/jdc-re-ss-01-nss-ebpf.config" "$RUNNER_TEMP/jdc-re-ss-01/device.config"
-          sha256sum "$RUNNER_TEMP/jdc-re-ss-01/device.config"
+          cp "$GITHUB_WORKSPACE/configs/daeuniverse-public-key.pem" "$RUNNER_TEMP/jdc-re-ss-01/daeuniverse-public-key.pem"
+          sha256sum "$RUNNER_TEMP/jdc-re-ss-01/device.config" "$RUNNER_TEMP/jdc-re-ss-01/daeuniverse-public-key.pem"
 
       - name: Show runner resources
         run: |
@@ -97,7 +98,7 @@ jobs:
         run: |
           cd "$OPENWRT_PATH"
           mkdir -p files/etc/apk/keys files/etc/apk/repositories.d
-          install -m 0644 "$GITHUB_WORKSPACE/configs/daeuniverse-public-key.pem" files/etc/apk/keys/daeuniverse.pem
+          install -m 0644 "$RUNNER_TEMP/jdc-re-ss-01/daeuniverse-public-key.pem" files/etc/apk/keys/daeuniverse.pem
           printf '%s\n' '@daeuniverse https://openwrt.daeuniverse.org/25.12/packages/aarch64_cortex-a53/packages.adb' > files/etc/apk/repositories.d/daeuniverse.list
 
       - name: Add HomeProxy package source
