@@ -5,8 +5,9 @@ on:
     branches:
       - feat/jdc-re-ss-01-source-build
     paths:
-      - ".github/workflows/build-jdc-re-ss-01.yml"
-      - "configs/jdc-re-ss-01-nss-ebpf.config"
+      - .github/workflows/build-jdc-re-ss-01.yml
+      - configs/jdc-re-ss-01-nss-ebpf.config
+      - configs/daeuniverse-public-key.pem
   workflow_dispatch:
 
 permissions:
@@ -36,12 +37,9 @@ jobs:
 
       - name: Show runner resources
         run: |
-          echo "CPU:"
           nproc
           lscpu
-          echo "Memory:"
           free -h
-          echo "Disk:"
           df -hT
 
       - name: Free disk space
@@ -59,27 +57,14 @@ jobs:
           DEBIAN_FRONTEND: noninteractive
         run: |
           sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            ack asciidoc autoconf automake autopoint bison build-essential \
-            bzip2 ccache clang cmake cpio curl device-tree-compiler dwarves \
-            flex gawk gcc-multilib g++-multilib gettext git gperf \
-            lib32gcc-s1 libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
-            libgmp-dev libmpc-dev libmpfr-dev libncurses-dev libncurses5-dev \
-            libreadline-dev libssl-dev libtool libxml-parser-perl libzstd-dev \
-            lld llvm llvm-dev make mkisofs ninja-build p7zip-full patch \
-            pkg-config python3 python3-dev python3-pip python3-ply \
-            python3-pyelftools python3-setuptools qemu-utils re2c rsync \
-            squashfs-tools subversion swig time unzip upx-ucl wget xsltproc \
-            zlib1g-dev zstd file
+          sudo apt-get install -y --no-install-recommends build-essential clang flex bison g++ gawk gcc-multilib g++-multilib gettext git libncurses-dev libssl-dev pahole llvm llvm-dev python3 python3-dev python3-pip python3-setuptools rsync unzip zlib1g-dev file wget subversion patch quilt libglib2.0-dev libgmp-dev libmpfr-dev libmpc-dev libelf-dev zstd
           sudo apt-get clean
-          df -hT
 
-      - name: Clone LiBwrt NSS source
+      - name: Clone LibWrt NSS source
         env:
           SOURCE_BRANCH: 25.12-nss
         run: |
-          git clone --depth 1 --single-branch --branch "$SOURCE_BRANCH" \
-            https://github.com/LiBwrt/LibWrt.git openwrt
+          git clone --depth 1 --single-branch --branch "$SOURCE_BRANCH" https://github.com/LiBwrt/LibWrt.git openwrt
           echo "OPENWRT_PATH=$GITHUB_WORKSPACE/openwrt" >> "$GITHUB_ENV"
           cd openwrt
           git log -1 --format='LibWrt commit: %H%nCommit date: %cI%nSubject: %s'
@@ -89,7 +74,6 @@ jobs:
           cd "$OPENWRT_PATH"
           python3 - <<'PY'
           from pathlib import Path
-
           path = Path("target/linux/qualcommax/image/ipq60xx.mk")
           text = path.read_text()
           marker = "define Device/jdcloud_re-ss-01" + chr(10)
@@ -105,7 +89,7 @@ jobs:
               raise SystemExit("Expected exactly one RE-SS-01 factory image recipe")
           text = text[:start] + block + text[end:]
           path.write_text(text)
-          print("RE-SS-01 kernel image limit patched to 12 MiB")
+          print("RE-SS-01 kernel size patched to 12 MiB for HLOS12M")
           PY
           grep -n -A12 jdcloud_re-ss-01 target/linux/qualcommax/image/ipq60xx.mk | head -n 13
 
@@ -119,8 +103,7 @@ jobs:
       - name: Add HomeProxy package source
         run: |
           cd "$OPENWRT_PATH"
-          git clone --depth 1 https://github.com/immortalwrt/homeproxy.git \
-            package/luci-app-homeproxy
+          git clone --depth 1 https://github.com/immortalwrt/homeproxy.git package/luci-app-homeproxy
           test -f package/luci-app-homeproxy/Makefile
 
       - name: Install feeds and load device configuration
@@ -130,15 +113,14 @@ jobs:
           ./scripts/feeds install -a
           cp "$RUNNER_TEMP/jdc-re-ss-01/device.config" .config
           make defconfig
-          echo "Resolved target:"
-          grep -E '^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE|qualcommax)' .config || true
-          echo "Resolved required packages:"
-          grep -E '^CONFIG_PACKAGE_(mwan3|luci-app-mwan3|adguardhome|luci-app-homeproxy)=y$' .config
-          grep -q '^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y$' .config
-          grep -q '^CONFIG_PACKAGE_mwan3=y$' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-mwan3=y$' .config
-          grep -q '^CONFIG_PACKAGE_adguardhome=y$' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-homeproxy=y$' .config
+          echo "Resolved target and packages:"
+          grep -E 'CONFIG_TARGET_qualcommax|CONFIG_PACKAGE_(mwan3|luci-app-mwan3|adguardhome|luci-app-homeproxy)' .config || true
+          grep -Fq 'CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y' .config
+          grep -Fq 'CONFIG_PACKAGE_mwan3=y' .config
+          grep -Fq 'CONFIG_PACKAGE_luci-app-mwan3=y' .config
+          grep -Fq 'CONFIG_PACKAGE_luci-i18n-mwan3-zh-cn=y' .config
+          grep -Fq 'CONFIG_PACKAGE_adguardhome=y' .config
+          grep -Fq 'CONFIG_PACKAGE_luci-app-homeproxy=y' .config
           grep -Fq 'CONFIG_KERNEL_DEBUG_INFO=y' .config
           grep -Fq 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config
           grep -Fq 'CONFIG_PACKAGE_kmod-sched-core=y' .config
@@ -152,7 +134,6 @@ jobs:
           grep -Fq 'CONFIG_PACKAGE_v2ray-geosite=y' .config
           grep -Fq 'CONFIG_PACKAGE_ca-bundle=y' .config
           grep -Fq 'CONFIG_PACKAGE_libstdcpp=y' .config
-          grep -Fq 'CONFIG_PACKAGE_luci-i18n-mwan3-zh-cn=y' .config
           cp .config "$GITHUB_WORKSPACE/resolved.config"
 
       - name: Download source packages
@@ -166,62 +147,11 @@ jobs:
           set +e
           cd "$OPENWRT_PATH"
           mkdir -p "$GITHUB_WORKSPACE/build-logs"
-          echo "Starting parallel source build with $(nproc) jobs"
-          make -j"$(nproc)" > "$GITHUB_WORKSPACE/build-logs/parallel.log" 2>&1
+          make -j"$(nproc)" > "$GITHUB_WORKSPACE/build-logs/build.log" 2>&1
           rc=$?
           if [ "$rc" -ne 0 ]; then
-            echo "Parallel build failed with exit code $rc; retrying serial verbose build"
-            tail -n 120 "$GITHUB_WORKSPACE/build-logs/parallel.log"
-            make -j1 V=s > "$GITHUB_WORKSPACE/build-logs/serial.log" 2>&1
-            rc=$?
-            echo "Serial build exit code: $rc"
-            tail -n 300 "$GITHUB_WORKSPACE/build-logs/serial.log"
+            tail -n 180 "$GITHUB_WORKSPACE/build-logs/build.log"
           fi
-          echo "===== Kernel size / BTF diagnostics ====="
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          if [ -n "$KERNEL_CONFIG" ]; then
-            KERNEL_ROOT="$(dirname "$KERNEL_CONFIG")/.."
-            echo "Kernel config: $KERNEL_CONFIG"
-            grep -E '^(CONFIG_(DEBUG_INFO|DEBUG_INFO_BTF|DEBUG_INFO_DWARF5|DEBUG_INFO_REDUCED|BPF|BPF_SYSCALL|BPF_JIT|IKCONFIG|IKCONFIG_PROC|KALLSYMS|KALLSYMS_ALL|MODULES|MODULE_UNLOAD|VMLINUX_BTF))=' "$KERNEL_CONFIG" || true
-          else
-            KERNEL_ROOT=""
-            echo "Kernel .config not found"
-          fi
-
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          IMAGE="$(find build_dir/target-* -maxdepth 3 -type f -name Image -print -quit)"
-          FIT="$(find build_dir/target-* -maxdepth 3 -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
-          for f in "$VMLINUX" "$IMAGE" "$FIT"; do
-            [ -n "$f" ] && [ -s "$f" ] && stat -c '%n: %s bytes' "$f"
-          done
-
-          if [ -n "$VMLINUX" ] && [ -s "$VMLINUX" ]; then
-            echo "--- ELF section sizes (vmlinux) ---"
-            readelf -SW "$VMLINUX" | grep -E ' \.?(BTF|text|rodata|data|init|symtab|strtab|debug_)' || true
-            echo "--- objdump section headers ---"
-            objdump -h "$VMLINUX" | grep -E '(^Idx|\.BTF|\.text|\.rodata|\.data|\.init|\.debug_)' || true
-            BTF_DIAG="$RUNNER_TEMP/re-ss-01-vmlinux.BTF"
-            if objcopy --dump-section ".BTF=$BTF_DIAG" "$VMLINUX" 2>/dev/null; then
-              stat -c 'Extracted .BTF: %s bytes' "$BTF_DIAG"
-            else
-              echo "Could not extract .BTF from vmlinux"
-            fi
-          fi
-
-          if [ -n "$IMAGE" ] && [ -s "$IMAGE" ]; then
-            echo "--- Image compression estimates ---"
-            gzip -n -9 -c "$IMAGE" | wc -c
-            if [ -x staging_dir/host/bin/libdeflate-gzip ]; then
-              staging_dir/host/bin/libdeflate-gzip -f -12 -c "$IMAGE" | wc -c
-            fi
-          fi
-
-          if [ -n "$FIT" ] && [ -s "$FIT" ]; then
-            echo "--- FIT metadata ---"
-            stat -c '%n: %s bytes' "$FIT"
-            mkimage -l "$FIT" || true
-          fi
-          echo "===== End kernel diagnostics ====="
           exit "$rc"
 
       - name: Upload build diagnostics
@@ -233,460 +163,30 @@ jobs:
           compression-level: 6
           path: build-logs/
 
-      - name: Verify target images and built-in BTF
+      - name: Verify factory, sysupgrade and BTF
         run: |
           cd "$OPENWRT_PATH"
           OUT="$OPENWRT_PATH/bin/targets/qualcommax/ipq60xx"
-          test -d "$OUT"
           test -s "$OUT/profiles.json"
-          grep -q 'jdcloud_re-ss-01' "$OUT/profiles.json"
-          echo "Generated image files:"
-          find "$OUT" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' | sort
+          grep -Fq jdcloud_re-ss-01 "$OUT/profiles.json"
           FACTORY="$(find "$OUT" -maxdepth 1 -type f -name '*factory.bin' -print -quit)"
           SYSUPGRADE="$(find "$OUT" -maxdepth 1 -type f -name '*sysupgrade.bin' -print -quit)"
           test -n "$FACTORY" && test -s "$FACTORY"
           test -n "$SYSUPGRADE" && test -s "$SYSUPGRADE"
-          echo "Factory image: $FACTORY ($(stat -c%s "$FACTORY") bytes)"
-          echo "Sysupgrade image: $SYSUPGRADE ($(stat -c%s "$SYSUPGRADE") bytes)"
-          echo "Kernel BTF configuration:"
+          echo "Factory: $FACTORY ($(stat -c%s "$FACTORY") bytes)"
+          echo "Sysupgrade: $SYSUPGRADE ($(stat -c%s "$SYSUPGRADE") bytes)"
+          FIT="$(find build_dir/target-* -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
+          test -n "$FIT" && test -s "$FIT"
+          FIT_SIZE="$(stat -c%s "$FIT")"
+          test "$FIT_SIZE" -le 12582912
           KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
           test -n "$KERNEL_CONFIG"
-          grep -q '^CONFIG_DEBUG_INFO_BTF=y$' "$KERNEL_CONFIG"
-          echo "Kernel BTF binary validation:"
+          grep -Fq 'CONFIG_DEBUG_INFO_BTF=y' "$KERNEL_CONFIG"
           VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
           test -n "$VMLINUX"
           BTF_SECTION="$RUNNER_TEMP/vmlinux.btf"
-          objcopy --dump-section .BTF="$BTF_SECTION" "$VMLINUX"
+          llvm-objcopy --dump-section .BTF="$BTF_SECTION" "$VMLINUX"
           test -s "$BTF_SECTION"
-          echo "Non-empty .BTF section successfully extracted from $VMLINUX"
-          echo "Checksums:"
-          (cd "$OUT" && sha256sum -c sha256sums)
-
-      - name: Upload firmware and package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDCloud-RE-SS-01-LibWrt-NSS-eBPF-ready-${{ github.run_number }}
-          if-no-files-found: error
-          compression-level: 1
-          path: |
-            openwrt/bin/targets/qualcommax/ipq60xx/
-            openwrt/bin/packages/aarch64_cortex-a53/
-            resolved.config
- target/linux/qualcommax/image/ipq60xx.mk
-
-      - name: Add daeuniverse APK feed to image
-        run: |
-          cd "$OPENWRT_PATH"
-          mkdir -p files/etc/apk/keys files/etc/apk/repositories.d
-          install -m 0644 "$GITHUB_WORKSPACE/configs/daeuniverse-public-key.pem" files/etc/apk/keys/daeuniverse.pem
-          printf '%s\n' '@daeuniverse https://openwrt.daeuniverse.org/25.12/packages/aarch64_cortex-a53/packages.adb' > files/etc/apk/repositories.d/daeuniverse.list
-
-      - name: Add HomeProxy package source
-        run: |
-          cd "$OPENWRT_PATH"
-          git clone --depth 1 https://github.com/immortalwrt/homeproxy.git \
-            package/luci-app-homeproxy
-          test -f package/luci-app-homeproxy/Makefile
-
-      - name: Install feeds and load device configuration
-        run: |
-          cd "$OPENWRT_PATH"
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-          cp "$RUNNER_TEMP/jdc-re-ss-01/device.config" .config
-          make defconfig
-          echo "Resolved target:"
-          grep -E '^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE|qualcommax)' .config || true
-          echo "Resolved required packages:"
-          grep -E '^CONFIG_PACKAGE_(mwan3|luci-app-mwan3|adguardhome|luci-app-homeproxy)=y$' .config
-          grep -q '^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y$' .config
-          grep -q '^CONFIG_PACKAGE_mwan3=y$' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-mwan3=y$' .config
-          grep -q '^CONFIG_PACKAGE_adguardhome=y$' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-homeproxy=y$' .config
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO=y$' .config
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y$' .config
-          ! grep -q '^CONFIG_PACKAGE_\(dae\|honk\|luci-app-dae\|luci-app-honk\)=y$' .config
-          cp .config "$GITHUB_WORKSPACE/resolved.config"
-
-      - name: Download source packages
-        run: |
-          cd "$OPENWRT_PATH"
-          make download -j"$(nproc)"
-          find dl -size -1024c -print -delete
-
-      - name: Compile firmware
-        run: |
-          set +e
-          cd "$OPENWRT_PATH"
-          mkdir -p "$GITHUB_WORKSPACE/build-logs"
-          echo "Starting parallel source build with $(nproc) jobs"
-          make -j"$(nproc)" > "$GITHUB_WORKSPACE/build-logs/parallel.log" 2>&1
-          rc=$?
-          if [ "$rc" -ne 0 ]; then
-            echo "Parallel build failed with exit code $rc; retrying serial verbose build"
-            tail -n 120 "$GITHUB_WORKSPACE/build-logs/parallel.log"
-            make -j1 V=s > "$GITHUB_WORKSPACE/build-logs/serial.log" 2>&1
-            rc=$?
-            echo "Serial build exit code: $rc"
-            tail -n 300 "$GITHUB_WORKSPACE/build-logs/serial.log"
-          fi
-          echo "===== Kernel size / BTF diagnostics ====="
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          if [ -n "$KERNEL_CONFIG" ]; then
-            KERNEL_ROOT="$(dirname "$KERNEL_CONFIG")/.."
-            echo "Kernel config: $KERNEL_CONFIG"
-            grep -E '^(CONFIG_(DEBUG_INFO|DEBUG_INFO_BTF|DEBUG_INFO_DWARF5|DEBUG_INFO_REDUCED|BPF|BPF_SYSCALL|BPF_JIT|IKCONFIG|IKCONFIG_PROC|KALLSYMS|KALLSYMS_ALL|MODULES|MODULE_UNLOAD|VMLINUX_BTF))=' "$KERNEL_CONFIG" || true
-          else
-            KERNEL_ROOT=""
-            echo "Kernel .config not found"
-          fi
-
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          IMAGE="$(find build_dir/target-* -maxdepth 3 -type f -name Image -print -quit)"
-          FIT="$(find build_dir/target-* -maxdepth 3 -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
-          for f in "$VMLINUX" "$IMAGE" "$FIT"; do
-            [ -n "$f" ] && [ -s "$f" ] && stat -c '%n: %s bytes' "$f"
-          done
-
-          if [ -n "$VMLINUX" ] && [ -s "$VMLINUX" ]; then
-            echo "--- ELF section sizes (vmlinux) ---"
-            readelf -SW "$VMLINUX" | grep -E ' \.?(BTF|text|rodata|data|init|symtab|strtab|debug_)' || true
-            echo "--- objdump section headers ---"
-            objdump -h "$VMLINUX" | grep -E '(^Idx|\.BTF|\.text|\.rodata|\.data|\.init|\.debug_)' || true
-            BTF_DIAG="$RUNNER_TEMP/re-ss-01-vmlinux.BTF"
-            if objcopy --dump-section ".BTF=$BTF_DIAG" "$VMLINUX" 2>/dev/null; then
-              stat -c 'Extracted .BTF: %s bytes' "$BTF_DIAG"
-            else
-              echo "Could not extract .BTF from vmlinux"
-            fi
-          fi
-
-          if [ -n "$IMAGE" ] && [ -s "$IMAGE" ]; then
-            echo "--- Image compression estimates ---"
-            gzip -n -9 -c "$IMAGE" | wc -c
-            if [ -x staging_dir/host/bin/libdeflate-gzip ]; then
-              staging_dir/host/bin/libdeflate-gzip -f -12 -c "$IMAGE" | wc -c
-            fi
-          fi
-
-          if [ -n "$FIT" ] && [ -s "$FIT" ]; then
-            echo "--- FIT metadata ---"
-            stat -c '%n: %s bytes' "$FIT"
-            mkimage -l "$FIT" || true
-          fi
-          echo "===== End kernel diagnostics ====="
-          exit "$rc"
-
-      - name: Upload build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDCloud-RE-SS-01-build-logs-${{ github.run_number }}
-          if-no-files-found: warn
-          compression-level: 6
-          path: build-logs/
-
-      - name: Verify target images and built-in BTF
-        run: |
-          cd "$OPENWRT_PATH"
-          OUT="$OPENWRT_PATH/bin/targets/qualcommax/ipq60xx"
-          test -d "$OUT"
-          test -s "$OUT/profiles.json"
-          grep -q 'jdcloud_re-ss-01' "$OUT/profiles.json"
-          echo "Generated image files:"
-          find "$OUT" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' | sort
-          echo "Kernel BTF configuration:"
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          test -n "$KERNEL_CONFIG"
-          grep -q '^CONFIG_DEBUG_INFO_BTF=y$' "$KERNEL_CONFIG"
-          echo "Kernel BTF binary validation:"
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          test -n "$VMLINUX"
-          BTF_SECTION="$RUNNER_TEMP/vmlinux.btf"
-          objcopy --dump-section .BTF="$BTF_SECTION" "$VMLINUX"
-          test -s "$BTF_SECTION"
-          echo "Non-empty .BTF section successfully extracted from $VMLINUX"
-          echo "Checksums:"
-          (cd "$OUT" && sha256sum -c sha256sums)
-
-      - name: Upload firmware and package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDCloud-RE-SS-01-LibWrt-NSS-eBPF-ready-${{ github.run_number }}
-          if-no-files-found: error
-          compression-level: 1
-          path: |
-            openwrt/bin/targets/qualcommax/ipq60xx/
-            openwrt/bin/packages/aarch64_cortex-a53/
-            resolved.config
- .config
-          grep -q 'CONFIG_PACKAGE_kmod-sched-core=y' .config
-          grep -q 'CONFIG_PACKAGE_kmod-sched-bpf=y' .config
-          grep -q 'CONFIG_PACKAGE_kmod-veth=y' .config
-          grep -q 'CONFIG_PACKAGE_kmod-nft-core=y' .config
-          grep -q 'CONFIG_PACKAGE_kmod-nft-queue=y' .config
-          grep -q 'CONFIG_PACKAGE_kmod-nfnetlink-queue=y' .config
-          grep -q 'CONFIG_PACKAGE_kmod-nf-conntrack=y' .config
-          grep -q 'CONFIG_PACKAGE_v2ray-geoip=y' .config
-          grep -q 'CONFIG_PACKAGE_v2ray-geosite=y' .config
-          grep -q 'CONFIG_PACKAGE_libstdcpp=y' .config
-          ! grep -q '^CONFIG_PACKAGE_\(dae\|honk\|luci-app-dae\|luci-app-honk\)=y$' .config
-          cp .config "$GITHUB_WORKSPACE/resolved.config"
-
-      - name: Download source packages
-        run: |
-          cd "$OPENWRT_PATH"
-          make download -j"$(nproc)"
-          find dl -size -1024c -print -delete
-
-      - name: Compile firmware
-        run: |
-          set +e
-          cd "$OPENWRT_PATH"
-          mkdir -p "$GITHUB_WORKSPACE/build-logs"
-          echo "Starting parallel source build with $(nproc) jobs"
-          make -j"$(nproc)" > "$GITHUB_WORKSPACE/build-logs/parallel.log" 2>&1
-          rc=$?
-          if [ "$rc" -ne 0 ]; then
-            echo "Parallel build failed with exit code $rc; retrying serial verbose build"
-            tail -n 120 "$GITHUB_WORKSPACE/build-logs/parallel.log"
-            make -j1 V=s > "$GITHUB_WORKSPACE/build-logs/serial.log" 2>&1
-            rc=$?
-            echo "Serial build exit code: $rc"
-            tail -n 300 "$GITHUB_WORKSPACE/build-logs/serial.log"
-          fi
-          echo "===== Kernel size / BTF diagnostics ====="
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          if [ -n "$KERNEL_CONFIG" ]; then
-            KERNEL_ROOT="$(dirname "$KERNEL_CONFIG")/.."
-            echo "Kernel config: $KERNEL_CONFIG"
-            grep -E '^(CONFIG_(DEBUG_INFO|DEBUG_INFO_BTF|DEBUG_INFO_DWARF5|DEBUG_INFO_REDUCED|BPF|BPF_SYSCALL|BPF_JIT|IKCONFIG|IKCONFIG_PROC|KALLSYMS|KALLSYMS_ALL|MODULES|MODULE_UNLOAD|VMLINUX_BTF))=' "$KERNEL_CONFIG" || true
-          else
-            KERNEL_ROOT=""
-            echo "Kernel .config not found"
-          fi
-
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          IMAGE="$(find build_dir/target-* -maxdepth 3 -type f -name Image -print -quit)"
-          FIT="$(find build_dir/target-* -maxdepth 3 -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
-          for f in "$VMLINUX" "$IMAGE" "$FIT"; do
-            [ -n "$f" ] && [ -s "$f" ] && stat -c '%n: %s bytes' "$f"
-          done
-
-          if [ -n "$VMLINUX" ] && [ -s "$VMLINUX" ]; then
-            echo "--- ELF section sizes (vmlinux) ---"
-            readelf -SW "$VMLINUX" | grep -E ' \.?(BTF|text|rodata|data|init|symtab|strtab|debug_)' || true
-            echo "--- objdump section headers ---"
-            objdump -h "$VMLINUX" | grep -E '(^Idx|\.BTF|\.text|\.rodata|\.data|\.init|\.debug_)' || true
-            BTF_DIAG="$RUNNER_TEMP/re-ss-01-vmlinux.BTF"
-            if objcopy --dump-section ".BTF=$BTF_DIAG" "$VMLINUX" 2>/dev/null; then
-              stat -c 'Extracted .BTF: %s bytes' "$BTF_DIAG"
-            else
-              echo "Could not extract .BTF from vmlinux"
-            fi
-          fi
-
-          if [ -n "$IMAGE" ] && [ -s "$IMAGE" ]; then
-            echo "--- Image compression estimates ---"
-            gzip -n -9 -c "$IMAGE" | wc -c
-            if [ -x staging_dir/host/bin/libdeflate-gzip ]; then
-              staging_dir/host/bin/libdeflate-gzip -f -12 -c "$IMAGE" | wc -c
-            fi
-          fi
-
-          if [ -n "$FIT" ] && [ -s "$FIT" ]; then
-            echo "--- FIT metadata ---"
-            stat -c '%n: %s bytes' "$FIT"
-            mkimage -l "$FIT" || true
-          fi
-          echo "===== End kernel diagnostics ====="
-          exit "$rc"
-
-      - name: Upload build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDCloud-RE-SS-01-build-logs-${{ github.run_number }}
-          if-no-files-found: warn
-          compression-level: 6
-          path: build-logs/
-
-      - name: Verify target images and built-in BTF
-        run: |
-          cd "$OPENWRT_PATH"
-          OUT="$OPENWRT_PATH/bin/targets/qualcommax/ipq60xx"
-          test -d "$OUT"
-          test -s "$OUT/profiles.json"
-          grep -q 'jdcloud_re-ss-01' "$OUT/profiles.json"
-          echo "Generated image files:"
-          find "$OUT" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' | sort
-          FACTORY="$(find "$OUT" -maxdepth 1 -type f -name '*factory.bin' -print -quit)"
-          SYSUPGRADE="$(find "$OUT" -maxdepth 1 -type f -name '*sysupgrade.bin' -print -quit)"
-          test -n "$FACTORY" && test -s "$FACTORY"
-          test -n "$SYSUPGRADE" && test -s "$SYSUPGRADE"
-          echo "Factory image: $FACTORY ($(stat -c%s "$FACTORY") bytes)"
-          echo "Sysupgrade image: $SYSUPGRADE ($(stat -c%s "$SYSUPGRADE") bytes)"
-          echo "Kernel BTF configuration:"
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          test -n "$KERNEL_CONFIG"
-          grep -q '^CONFIG_DEBUG_INFO_BTF=y$' "$KERNEL_CONFIG"
-          echo "Kernel BTF binary validation:"
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          test -n "$VMLINUX"
-          BTF_SECTION="$RUNNER_TEMP/vmlinux.btf"
-          objcopy --dump-section .BTF="$BTF_SECTION" "$VMLINUX"
-          test -s "$BTF_SECTION"
-          echo "Non-empty .BTF section successfully extracted from $VMLINUX"
-          echo "Checksums:"
-          (cd "$OUT" && sha256sum -c sha256sums)
-
-      - name: Upload firmware and package artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDCloud-RE-SS-01-LibWrt-NSS-eBPF-ready-${{ github.run_number }}
-          if-no-files-found: error
-          compression-level: 1
-          path: |
-            openwrt/bin/targets/qualcommax/ipq60xx/
-            openwrt/bin/packages/aarch64_cortex-a53/
-            resolved.config
- target/linux/qualcommax/image/ipq60xx.mk
-
-      - name: Add daeuniverse APK feed to image
-        run: |
-          cd "$OPENWRT_PATH"
-          mkdir -p files/etc/apk/keys files/etc/apk/repositories.d
-          install -m 0644 "$GITHUB_WORKSPACE/configs/daeuniverse-public-key.pem" files/etc/apk/keys/daeuniverse.pem
-          printf '%s\n' '@daeuniverse https://openwrt.daeuniverse.org/25.12/packages/aarch64_cortex-a53/packages.adb' > files/etc/apk/repositories.d/daeuniverse.list
-
-      - name: Add HomeProxy package source
-        run: |
-          cd "$OPENWRT_PATH"
-          git clone --depth 1 https://github.com/immortalwrt/homeproxy.git \
-            package/luci-app-homeproxy
-          test -f package/luci-app-homeproxy/Makefile
-
-      - name: Install feeds and load device configuration
-        run: |
-          cd "$OPENWRT_PATH"
-          ./scripts/feeds update -a
-          ./scripts/feeds install -a
-          cp "$RUNNER_TEMP/jdc-re-ss-01/device.config" .config
-          make defconfig
-          echo "Resolved target:"
-          grep -E '^CONFIG_TARGET_(BOARD|SUBTARGET|PROFILE|qualcommax)' .config || true
-          echo "Resolved required packages:"
-          grep -E '^CONFIG_PACKAGE_(mwan3|luci-app-mwan3|adguardhome|luci-app-homeproxy)=y$' .config
-          grep -q '^CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y$' .config
-          grep -q '^CONFIG_PACKAGE_mwan3=y$' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-mwan3=y$' .config
-          grep -q '^CONFIG_PACKAGE_adguardhome=y$' .config
-          grep -q '^CONFIG_PACKAGE_luci-app-homeproxy=y$' .config
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO=y$' .config
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y$' .config
-          ! grep -q '^CONFIG_PACKAGE_\(dae\|honk\|luci-app-dae\|luci-app-honk\)=y$' .config
-          cp .config "$GITHUB_WORKSPACE/resolved.config"
-
-      - name: Download source packages
-        run: |
-          cd "$OPENWRT_PATH"
-          make download -j"$(nproc)"
-          find dl -size -1024c -print -delete
-
-      - name: Compile firmware
-        run: |
-          set +e
-          cd "$OPENWRT_PATH"
-          mkdir -p "$GITHUB_WORKSPACE/build-logs"
-          echo "Starting parallel source build with $(nproc) jobs"
-          make -j"$(nproc)" > "$GITHUB_WORKSPACE/build-logs/parallel.log" 2>&1
-          rc=$?
-          if [ "$rc" -ne 0 ]; then
-            echo "Parallel build failed with exit code $rc; retrying serial verbose build"
-            tail -n 120 "$GITHUB_WORKSPACE/build-logs/parallel.log"
-            make -j1 V=s > "$GITHUB_WORKSPACE/build-logs/serial.log" 2>&1
-            rc=$?
-            echo "Serial build exit code: $rc"
-            tail -n 300 "$GITHUB_WORKSPACE/build-logs/serial.log"
-          fi
-          echo "===== Kernel size / BTF diagnostics ====="
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          if [ -n "$KERNEL_CONFIG" ]; then
-            KERNEL_ROOT="$(dirname "$KERNEL_CONFIG")/.."
-            echo "Kernel config: $KERNEL_CONFIG"
-            grep -E '^(CONFIG_(DEBUG_INFO|DEBUG_INFO_BTF|DEBUG_INFO_DWARF5|DEBUG_INFO_REDUCED|BPF|BPF_SYSCALL|BPF_JIT|IKCONFIG|IKCONFIG_PROC|KALLSYMS|KALLSYMS_ALL|MODULES|MODULE_UNLOAD|VMLINUX_BTF))=' "$KERNEL_CONFIG" || true
-          else
-            KERNEL_ROOT=""
-            echo "Kernel .config not found"
-          fi
-
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          IMAGE="$(find build_dir/target-* -maxdepth 3 -type f -name Image -print -quit)"
-          FIT="$(find build_dir/target-* -maxdepth 3 -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
-          for f in "$VMLINUX" "$IMAGE" "$FIT"; do
-            [ -n "$f" ] && [ -s "$f" ] && stat -c '%n: %s bytes' "$f"
-          done
-
-          if [ -n "$VMLINUX" ] && [ -s "$VMLINUX" ]; then
-            echo "--- ELF section sizes (vmlinux) ---"
-            readelf -SW "$VMLINUX" | grep -E ' \.?(BTF|text|rodata|data|init|symtab|strtab|debug_)' || true
-            echo "--- objdump section headers ---"
-            objdump -h "$VMLINUX" | grep -E '(^Idx|\.BTF|\.text|\.rodata|\.data|\.init|\.debug_)' || true
-            BTF_DIAG="$RUNNER_TEMP/re-ss-01-vmlinux.BTF"
-            if objcopy --dump-section ".BTF=$BTF_DIAG" "$VMLINUX" 2>/dev/null; then
-              stat -c 'Extracted .BTF: %s bytes' "$BTF_DIAG"
-            else
-              echo "Could not extract .BTF from vmlinux"
-            fi
-          fi
-
-          if [ -n "$IMAGE" ] && [ -s "$IMAGE" ]; then
-            echo "--- Image compression estimates ---"
-            gzip -n -9 -c "$IMAGE" | wc -c
-            if [ -x staging_dir/host/bin/libdeflate-gzip ]; then
-              staging_dir/host/bin/libdeflate-gzip -f -12 -c "$IMAGE" | wc -c
-            fi
-          fi
-
-          if [ -n "$FIT" ] && [ -s "$FIT" ]; then
-            echo "--- FIT metadata ---"
-            stat -c '%n: %s bytes' "$FIT"
-            mkimage -l "$FIT" || true
-          fi
-          echo "===== End kernel diagnostics ====="
-          exit "$rc"
-
-      - name: Upload build diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: JDCloud-RE-SS-01-build-logs-${{ github.run_number }}
-          if-no-files-found: warn
-          compression-level: 6
-          path: build-logs/
-
-      - name: Verify target images and built-in BTF
-        run: |
-          cd "$OPENWRT_PATH"
-          OUT="$OPENWRT_PATH/bin/targets/qualcommax/ipq60xx"
-          test -d "$OUT"
-          test -s "$OUT/profiles.json"
-          grep -q 'jdcloud_re-ss-01' "$OUT/profiles.json"
-          echo "Generated image files:"
-          find "$OUT" -maxdepth 1 -type f -printf '%f (%s bytes)\\n' | sort
-          echo "Kernel BTF configuration:"
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          test -n "$KERNEL_CONFIG"
-          grep -q '^CONFIG_DEBUG_INFO_BTF=y$' "$KERNEL_CONFIG"
-          echo "Kernel BTF binary validation:"
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          test -n "$VMLINUX"
-          BTF_SECTION="$RUNNER_TEMP/vmlinux.btf"
-          objcopy --dump-section .BTF="$BTF_SECTION" "$VMLINUX"
-          test -s "$BTF_SECTION"
-          echo "Non-empty .BTF section successfully extracted from $VMLINUX"
-          echo "Checksums:"
           (cd "$OUT" && sha256sum -c sha256sums)
 
       - name: Upload firmware and package artifacts
