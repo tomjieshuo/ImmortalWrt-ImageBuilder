@@ -176,18 +176,41 @@ jobs:
           test -n "$SYSUPGRADE" && test -s "$SYSUPGRADE"
           echo "Factory: $FACTORY ($(stat -c%s "$FACTORY") bytes)"
           echo "Sysupgrade: $SYSUPGRADE ($(stat -c%s "$SYSUPGRADE") bytes)"
-          FIT="$(find build_dir/target-* -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
-          test -n "$FIT" && test -s "$FIT"
+          FIT="$(find build_dir -type f -name 'jdcloud_re-ss-01-uImage.itb' -print -quit)"
+          if [ -z "$FIT" ] || [ ! -s "$FIT" ]; then
+            echo "::error::RE-SS-01 FIT kernel image was not found"
+            find build_dir -type f \( -name '*.itb' -o -name 'Image*' \) -print | head -n 80
+            exit 1
+          fi
           FIT_SIZE="$(stat -c%s "$FIT")"
-          test "$FIT_SIZE" -le 12582912
-          KERNEL_CONFIG="$(find build_dir/target-* -path '*/linux-*/.config' -type f -print -quit)"
-          test -n "$KERNEL_CONFIG"
-          grep -Fq 'CONFIG_DEBUG_INFO_BTF=y' "$KERNEL_CONFIG"
-          VMLINUX="$(find build_dir/target-* -type f -name vmlinux -print -quit)"
-          test -n "$VMLINUX"
+          echo "FIT kernel: $FIT ($FIT_SIZE bytes; HLOS limit 12582912 bytes)"
+          if [ "$FIT_SIZE" -gt 12582912 ]; then
+            echo "::error::FIT kernel exceeds the 12 MiB HLOS partition"
+            exit 1
+          fi
+          KERNEL_CONFIG="$(find build_dir -path '*/linux-*/.config' -type f -print -quit)"
+          if [ -z "$KERNEL_CONFIG" ]; then
+            echo "::error::Linux kernel .config was not found"
+            exit 1
+          fi
+          echo "Kernel config: $KERNEL_CONFIG"
+          if ! grep -Fq 'CONFIG_DEBUG_INFO_BTF=y' "$KERNEL_CONFIG"; then
+            echo "::error::CONFIG_DEBUG_INFO_BTF is not enabled"
+            grep -E 'CONFIG_DEBUG_INFO|CONFIG_DEBUG_INFO_BTF' "$KERNEL_CONFIG" || true
+            exit 1
+          fi
+          VMLINUX="$(find build_dir -type f -name vmlinux -print -quit)"
+          if [ -z "$VMLINUX" ]; then
+            echo "::error::vmlinux was not found"
+            exit 1
+          fi
           BTF_SECTION="$RUNNER_TEMP/vmlinux.btf"
           llvm-objcopy --dump-section .BTF="$BTF_SECTION" "$VMLINUX"
-          test -s "$BTF_SECTION"
+          if [ ! -s "$BTF_SECTION" ]; then
+            echo "::error::vmlinux .BTF section is empty"
+            exit 1
+          fi
+          echo "BTF section: $(stat -c%s "$BTF_SECTION") bytes"
           (cd "$OUT" && sha256sum -c sha256sums)
 
       - name: Upload firmware and package artifacts
