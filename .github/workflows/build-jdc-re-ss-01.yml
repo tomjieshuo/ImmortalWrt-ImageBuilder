@@ -97,18 +97,26 @@ jobs:
           end = text.index("endef", start)
           block = text[start:end]
           old = "KERNEL_SIZE := 6144k"
-          new = "KERNEL_SIZE := 12288k"
           if block.count(old) != 1:
               raise SystemExit("Expected exactly one 6 MiB RE-SS-01 kernel limit; refusing to patch")
-          block = block.replace(old, new, 1)
+          block = block.replace(old, "KERNEL_SIZE := 12288k", 1)
           factory_lines = [line for line in block.splitlines() if line.startswith("IMAGE/factory.bin :=") and "append-kernel" in line and "KERNEL_SIZE" in line]
           if len(factory_lines) != 1:
               raise SystemExit("Expected exactly one RE-SS-01 factory image recipe")
           text = text[:start] + block + text[end:]
           path.write_text(text)
-          print("RE-SS-01: KERNEL_SIZE=12288k; factory.bin pads the FIT kernel to the 12 MiB HLOS partition")
+          print("RE-SS-01 kernel image limit patched to 12 MiB")
           PY
           grep -n -A12 jdcloud_re-ss-01 target/linux/qualcommax/image/ipq60xx.mk | head -n 13
+
+      - name: Add daeuniverse APK feed to image
+        run: |
+          cd "$OPENWRT_PATH"
+          mkdir -p files/etc/apk/keys files/etc/apk/repositories.d
+          install -m 0644 "$GITHUB_WORKSPACE/configs/daeuniverse-public-key.pem" files/etc/apk/keys/daeuniverse.pem
+          printf '%s\n' '@daeuniverse https://openwrt.daeuniverse.org/25.12/packages/aarch64_cortex-a53/packages.adb' > files/etc/apk/repositories.d/daeuniverse.list
+
+      - name: Add HomeProxy package source
         run: |
           cd "$OPENWRT_PATH"
           git clone --depth 1 https://github.com/immortalwrt/homeproxy.git \
@@ -131,9 +139,20 @@ jobs:
           grep -q '^CONFIG_PACKAGE_luci-app-mwan3=y$' .config
           grep -q '^CONFIG_PACKAGE_adguardhome=y$' .config
           grep -q '^CONFIG_PACKAGE_luci-app-homeproxy=y$' .config
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO=y$' .config
-          grep -q '^CONFIG_KERNEL_DEBUG_INFO_BTF=y
-          ! grep -q '^CONFIG_PACKAGE_\(dae\|honk\|luci-app-dae\|luci-app-honk\)=y$' .config
+          grep -Fq 'CONFIG_KERNEL_DEBUG_INFO=y' .config
+          grep -Fq 'CONFIG_KERNEL_DEBUG_INFO_BTF=y' .config
+          grep -Fq 'CONFIG_PACKAGE_kmod-sched-core=y' .config
+          grep -Fq 'CONFIG_PACKAGE_kmod-sched-bpf=y' .config
+          grep -Fq 'CONFIG_PACKAGE_kmod-veth=y' .config
+          grep -Fq 'CONFIG_PACKAGE_kmod-nft-core=y' .config
+          grep -Fq 'CONFIG_PACKAGE_kmod-nft-queue=y' .config
+          grep -Fq 'CONFIG_PACKAGE_kmod-nfnetlink-queue=y' .config
+          grep -Fq 'CONFIG_PACKAGE_kmod-nf-conntrack=y' .config
+          grep -Fq 'CONFIG_PACKAGE_v2ray-geoip=y' .config
+          grep -Fq 'CONFIG_PACKAGE_v2ray-geosite=y' .config
+          grep -Fq 'CONFIG_PACKAGE_ca-bundle=y' .config
+          grep -Fq 'CONFIG_PACKAGE_libstdcpp=y' .config
+          grep -Fq 'CONFIG_PACKAGE_luci-i18n-mwan3-zh-cn=y' .config
           cp .config "$GITHUB_WORKSPACE/resolved.config"
 
       - name: Download source packages
