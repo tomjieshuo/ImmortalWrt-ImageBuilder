@@ -188,20 +188,22 @@ jobs:
             echo "::error::FIT kernel exceeds the 12 MiB HLOS partition"
             exit 1
           fi
-          KERNEL_CONFIG="$(find build_dir -path '*/linux-*/.config' -type f -print -quit)"
+          KERNEL_CONFIG="$(find build_dir/target-* -type f -path '*/linux-qualcommax_ipq60xx/linux-*/.config' ! -path '*/backports-*/*' -print -quit)"
           if [ -z "$KERNEL_CONFIG" ]; then
-            echo "::error::Linux kernel .config was not found"
+            echo "::error::Qualcomm IPQ60xx main Linux kernel .config was not found"
+            find build_dir/target-* -type f -name .config -print | head -n 100
             exit 1
           fi
-          echo "Kernel config: $KERNEL_CONFIG"
+          echo "Main kernel config: $KERNEL_CONFIG"
           if ! grep -Fq 'CONFIG_DEBUG_INFO_BTF=y' "$KERNEL_CONFIG"; then
-            echo "::error::CONFIG_DEBUG_INFO_BTF is not enabled"
+            echo "::error::CONFIG_DEBUG_INFO_BTF is not enabled in the main Linux kernel config"
             grep -E 'CONFIG_DEBUG_INFO|CONFIG_DEBUG_INFO_BTF' "$KERNEL_CONFIG" || true
             exit 1
           fi
-          VMLINUX="$(find build_dir -type f -name vmlinux -print -quit)"
+          VMLINUX="$(find build_dir/target-* -type f -path '*/linux-qualcommax_ipq60xx/linux-*/vmlinux' ! -path '*/backports-*/*' -print -quit)"
           if [ -z "$VMLINUX" ]; then
-            echo "::error::vmlinux was not found"
+            echo "::error::Qualcomm IPQ60xx main kernel vmlinux was not found"
+            find build_dir/target-* -type f -name vmlinux -print | head -n 80
             exit 1
           fi
           BTF_SECTION="$RUNNER_TEMP/vmlinux.btf"
